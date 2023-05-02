@@ -95,19 +95,117 @@ std::vector<double> distances_in_frame (frame & atoms) {
 
 std::vector<point> potential_cations (frame & oxygens, const double & max_distance) {
     std::vector<point> result;
-    for (int i = 0; i < oxygens.size(); ++i) {
+    for (int i = 0; i < oxygens.size(); ++i)
         for (int j = 0; j < i; ++j)
             if (distance(oxygens[i], oxygens[j]) <= max_distance) {
                 result.emplace_back(oxygens[i]);
                 result.emplace_back(oxygens[j]);
             }
-    }
     return result;
+}  // Запусти покадрово и найдёшь максимальный размер катиона,
+
+
+bool is_Zundel (point & O_1, point & O_2, frame & free_protons, const double & deviation) {
+    bool ans = false;
+    point center = geometric_center_between_O(O_2, O_1);
+    for (const auto & free_proton : free_protons)
+        if (distance(free_proton, center) <= deviation) {
+            ans = true;
+            break;
+        }
+    return ans;
 }
 
 
-bool pair_of_interest (point & O_1, point & O_2, frame & free_proton, ) {
+template<typename T, size_t... Is>
+double scalar_vector_multiplication_impl (T const& a, T const& b, std::index_sequence<Is...>, std::index_sequence<Is...>) {
+    return ((std::get<Is>(a) * std::get<Is>(b)) + ...);
+}
+
+template <class Tuple>
+double scalar_vector_multiplication (const Tuple & a, const Tuple & b) {
+    constexpr auto size = std::tuple_size<Tuple>{};
+    return scalar_vector_multiplication_impl(a, b, std::make_index_sequence<size>{}, std::make_index_sequence<size>{});
+}
+
+
+template <class Tuple>
+double vector_abs (const Tuple & t) {
+    constexpr auto size = std::tuple_size<Tuple>{};
+    return std::sqrt(scalar_vector_multiplication_impl(t, t, std::make_index_sequence<size>{}, std::make_index_sequence<size>{}));
+}
+
+
+template <class Tuple>
+double cos_angle_between_vectors  (const Tuple & a, const Tuple & b) {
+    return (scalar_vector_multiplication(a, b) / vector_abs(a) / vector_abs(b));
+}
+
+
+point vector_vector_multiplication (const point & a, const point & b) {
+    double x = std::get<1>(a)*std::get<2>(b) - std::get<2>(a)*std::get<1>(b);
+    double y = std::get<0>(a)*std::get<2>(b) - std::get<2>(a)*std::get<0>(b);
+    double z = std::get<0>(a)*std::get<1>(b) - std::get<1>(a)*std::get<0>(b);
+    return std::make_tuple(x, -y, z);
+}
+
+
+double sin_angle_between_vectors  (const point & a, const point & b) {
+    return vector_abs(vector_vector_multiplication(a, b)) / vector_abs(a) / vector_abs(b);
+}
+
+
+std::vector<point> frame_of_reference_rotation (point & direction_vector, const std::vector<point> & basis_set) {
+    std::vector<point> new_basis_set;
+
+    double cos_a, cos_b, cos_g, sin_a, sin_b, sin_g;
+    cos_a = cos_angle_between_vectors(direction_vector, basis_set[0]);
+    cos_b = cos_angle_between_vectors(direction_vector, basis_set[1]);
+    cos_g = cos_angle_between_vectors(direction_vector, basis_set[2]);
+    sin_a = sin_angle_between_vectors(direction_vector, basis_set[0]);
+    sin_b = sin_angle_between_vectors(direction_vector, basis_set[1]);
+    sin_g = sin_angle_between_vectors(direction_vector, basis_set[2]);
+
+    std::vector<point> M; // Rotation matrix
+    M.emplace_back(cos_b*cos_g,                     -sin_a*cos_b,                      sin_b);
+    M.emplace_back(sin_a*sin_b*cos_g + sin_g*cos_a, -sin_a*sin_b*sin_g + cos_a*cos_g, -sin_a*cos_b);
+    M.emplace_back(sin_a*sin_g - sin_b*cos_a*cos_g,  sin_a*cos_g + sin_b*sin_g*cos_a,  cos_a*cos_b);
+
+    new_basis_set.reserve(basis_set.size());
+    for (const auto & vector : basis_set)
+        new_basis_set.emplace_back(scalar_vector_multiplication(M[0], vector),
+                                   scalar_vector_multiplication(M[1], vector),
+                                   scalar_vector_multiplication(M[2], vector));
+
+    return new_basis_set;
+}
+
+
+bool is_cation (point & O_1, point & O_2, frame & free_protons, const double & deviation) {
+    bool ans = false;
+    point ref, O_2_in_O1_ref;
+    vector_scalar_multiplication(O_1, -1.0, ref);
+    vector_offset(O_2, ref, O_2_in_O1_ref);
+    const std::vector<point> default_basis_set = {std::make_tuple(1, 0, 0),
+                                                  std::make_tuple(0, 1, 0),
+                                                  std::make_tuple(0, 0, 1)};
+
+    std::vector<point> new_basis_set = std::move(frame_of_reference_rotation(O_2_in_O1_ref, default_basis_set));
+
+    for (int i = 0; i < free_protons.size(); ++i) {
+        vector_offset(, ref, O_2_in_O1_ref);
+    }
+
+    return ans;
+}
+
+
+bool pair_of_interest (point & O_1, point & O_2, frame & free_proton, const double & deviation, const std::string & type) {
+    if (type == "Zundel") {
+        point geometric_center = geometric_center_between_O(O_1,O_2);
+    }
 
 }
+
 
 
