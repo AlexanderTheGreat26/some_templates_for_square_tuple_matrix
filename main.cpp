@@ -36,7 +36,7 @@ int main() {
 
 
 template<size_t Is = 0, typename... Tp>
-void vector_scalar_multiplication (std::tuple<Tp...>& vector, const double & lambda, std::tuple<Tp...>& result) {
+void vector_scalar_multiplication (const std::tuple<Tp...>& vector, const double & lambda, std::tuple<Tp...>& result) {
     std::get<Is>(result) = std::get<Is>(vector) * lambda; // May be better to make a recursion, but this more universal.
     if constexpr(Is + 1 != sizeof...(Tp))
         vector_scalar_multiplication<Is + 1>(vector, lambda, result);
@@ -44,7 +44,7 @@ void vector_scalar_multiplication (std::tuple<Tp...>& vector, const double & lam
 
 
 template<size_t Is = 0, typename... Tp>
-void vector_offset (std::tuple<Tp...>& vector, std::tuple<Tp...>& frame_of_reference, std::tuple<Tp...>& result) {
+void vector_offset (const std::tuple<Tp...>& vector, std::tuple<Tp...>& frame_of_reference, std::tuple<Tp...>& result) {
     std::get<Is>(result) = std::get<Is>(vector) + std::get<Is>(frame_of_reference);
     if constexpr(Is + 1 != sizeof...(Tp))
         vector_offset<Is + 1>(vector, frame_of_reference, result);
@@ -155,16 +155,22 @@ double sin_angle_between_vectors  (const point & a, const point & b) {
 }
 
 
+
+
+
+
+
+
 std::vector<point> frame_of_reference_rotation (point & direction_vector, const std::vector<point> & basis_set) {
     std::vector<point> new_basis_set;
 
-    double cos_a, cos_b, cos_g, sin_a, sin_b, sin_g;
-    cos_a = cos_angle_between_vectors(direction_vector, basis_set[0]);
-    cos_b = cos_angle_between_vectors(direction_vector, basis_set[1]);
-    cos_g = cos_angle_between_vectors(direction_vector, basis_set[2]);
-    sin_a = sin_angle_between_vectors(direction_vector, basis_set[0]);
-    sin_b = sin_angle_between_vectors(direction_vector, basis_set[1]);
-    sin_g = sin_angle_between_vectors(direction_vector, basis_set[2]);
+//    double cos_a, cos_b, cos_g, sin_a, sin_b, sin_g;
+//    cos_a = cos_angle_between_vectors(direction_vector, basis_set[0]);
+//    cos_b = cos_angle_between_vectors(direction_vector, basis_set[1]);
+//    cos_g = cos_angle_between_vectors(direction_vector, basis_set[2]);
+//    sin_a = sin_angle_between_vectors(direction_vector, basis_set[0]);
+//    sin_b = sin_angle_between_vectors(direction_vector, basis_set[1]);
+//    sin_g = sin_angle_between_vectors(direction_vector, basis_set[2]);
 
     std::vector<point> M; // Rotation matrix
     M.emplace_back(cos_b*cos_g,                     -sin_a*cos_b,                      sin_b);
@@ -175,7 +181,7 @@ std::vector<point> frame_of_reference_rotation (point & direction_vector, const 
     for (const auto & vector : basis_set)
         new_basis_set.emplace_back(scalar_vector_multiplication(M[0], vector),
                                    scalar_vector_multiplication(M[1], vector),
-                                   scalar_vector_multiplication(M[2], vector));
+                                   scalar_vector_multiplication(M[2], vector)); // Чёт говной воняет.
 
     return new_basis_set;
 }
@@ -205,6 +211,89 @@ bool pair_of_interest (point & O_1, point & O_2, frame & free_proton, const doub
         point geometric_center = geometric_center_between_O(O_1,O_2);
     }
 
+}
+
+
+point direction_of_rotation (point & vector, std::vector<point> & basis_set) {
+   point result;
+
+    // We need to create a projection to xOy of our vector
+    point xOy_projection = std::make_tuple(std::get<0>(vector), std::get<1>(vector), 0);
+
+    double cos_a, cos_b, cos_g, sin_a, sin_b, sin_g;
+
+    cos_a = cos_angle_between_vectors(xOy_projection, basis_set[0]);
+    sin_a = sin_angle_between_vectors(xOy_projection, basis_set[0]);
+
+    cos_b = cos_angle_between_vectors(xOy_projection, basis_set[1]);
+    sin_b = sin_angle_between_vectors(xOy_projection, basis_set[1]);
+
+    cos_g = cos_angle_between_vectors(vector, basis_set[2]);
+    sin_g = sin_angle_between_vectors(vector, basis_set[2]);
+    return result;
+}
+
+
+template <class Tuple>
+auto linear_vector_sum  (const Tuple & a, const double & lambda_1, const Tuple & b, const double & lambda_2) {
+    auto buf_a = a;
+    auto buf_b = b;
+    vector_scalar_multiplication(a, lambda_1, buf_a);
+    vector_scalar_multiplication(b, lambda_2, buf_b);
+    vector_offset(buf_b, buf_a, buf_b);
+    return buf_b;
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void forward (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
+    for (int i = Is+1; i < invertible_matrix.size(); ++i) {
+        double lambda = -std::get<Is>(invertible_matrix[i]) / std::get<Is>(invertible_matrix[Is]);
+        invertible_matrix[i] = linear_vector_sum(invertible_matrix[Is], lambda, invertible_matrix[i], 1.0);
+        identity_matrix[i] = linear_vector_sum(identity_matrix[Is], lambda, identity_matrix[i], 1.0);
+    }
+    if constexpr (Is + 1 != sizeof...(Tp))
+        forward<Is + 1>(invertible_matrix, identity_matrix);
+}
+
+
+template<size_t Is = 0, typename... Tp, size_t N = sizeof...(Tp)-1>
+void back (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
+    for (int i = N-Is; i > 0; --i) {
+        double lambda = -std::get<N-Is>(invertible_matrix[i-1]) / std::get<N-Is>(invertible_matrix[N-Is]);
+        invertible_matrix[i-1] = linear_vector_sum(invertible_matrix[N-Is], lambda, invertible_matrix[i-1], 1.0);
+        identity_matrix[i-1] = linear_vector_sum(identity_matrix[N-Is], lambda, identity_matrix[i-1], 1.0);
+    }
+    if constexpr (N-Is > 0)
+        back<Is + 1>(invertible_matrix, identity_matrix);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void final_step (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
+    vector_scalar_multiplication(identity_matrix[Is], 1.0 / std::get<Is>(invertible_matrix[Is]), identity_matrix[Is]);
+    if constexpr (Is + 1 != sizeof...(Tp))
+        final_step<Is + 1>(invertible_matrix, identity_matrix);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void identity_matrix (std::vector<std::tuple<Tp...>> & E) {
+    for (int i = 0; i < E.size(); ++i)
+        std::get<Is>(E[i]) = (i == Is) ? 1 : 0;
+    if constexpr (Is + 1 != sizeof...(Tp))
+        identity_matrix<Is + 1>(E);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+auto Gaussian_elimination (std::vector<std::tuple<Tp...>> invertible_matrix) {
+    auto E = invertible_matrix;
+    identity_matrix(E);
+    forward(invertible_matrix, E);
+    back(invertible_matrix, E);
+    final_step(invertible_matrix, E);
+    return E;
 }
 
 
