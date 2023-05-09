@@ -21,6 +21,9 @@ typedef std::vector<point> frame;
 typedef std::vector<frame> frames;
 
 
+const size_t dim = std::tuple_size<point>{};
+
+
 point geometric_center_between_O (point & O_1, point & O_2);
 
 
@@ -296,5 +299,32 @@ auto Gaussian_elimination (std::vector<std::tuple<Tp...>> invertible_matrix) {
     return E;
 }
 
+
+template <typename F, size_t... Is>
+auto gen_tuple_impl(F & func, std::index_sequence<Is...> ) {
+    return std::make_tuple(func(Is)...);
+}
+
+template <size_t N, typename F>
+auto gen_tuple (const F & func) {
+    return gen_tuple_impl(func, std::make_index_sequence<N>{} );
+}
+
+
+
+
+template<size_t Is = 0, typename... Tp>
+void matrix_multiplication (std::vector<std::tuple<Tp...>> & A, std::vector<std::tuple<Tp...>> & B, std::vector<std::tuple<Tp...>> & R) {
+    std::tuple<Tp...> column;
+    std::vector<double> buf_column;
+    buf_column.reserve(B.size());
+    for (const auto & vector : B)
+        buf_column.emplace_back(std::get<Is>(vector));
+    column = std::move(gen_tuple<dim>([&](size_t j) { return buf_column[j]; }));
+    for (int i = 0; i < B.size(); ++i)
+        std::get<Is>(R[i]) = scalar_vector_multiplication(A[i], column);
+    if constexpr (Is + 1 != sizeof...(Tp))
+        matrix_multiplication<Is + 1>(A, B, R);
+}
 
 
