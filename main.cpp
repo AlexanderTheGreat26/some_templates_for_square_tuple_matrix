@@ -21,7 +21,7 @@ typedef std::vector<point> frame;
 typedef std::vector<frame> frames;
 
 
-const size_t dim = std::tuple_size<point>{};
+const size_t dim = std::tuple_size<point>{}; // Number of spatial dimensions.
 
 
 point geometric_center_between_O (point & O_1, point & O_2);
@@ -158,35 +158,164 @@ double sin_angle_between_vectors  (const point & a, const point & b) {
 }
 
 
+template <class Tuple>
+auto linear_vector_sum  (const Tuple & a, const double & lambda_1, const Tuple & b, const double & lambda_2) {
+    auto buf_a = a;
+    auto buf_b = b;
+    vector_scalar_multiplication(a, lambda_1, buf_a);
+    vector_scalar_multiplication(b, lambda_2, buf_b);
+    vector_offset(buf_b, buf_a, buf_b);
+    return buf_b;
+}
 
 
+template<size_t Is = 0, typename... Tp>
+void forward (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
+    for (int i = Is+1; i < invertible_matrix.size(); ++i) {
+        double lambda = -std::get<Is>(invertible_matrix[i]) / std::get<Is>(invertible_matrix[Is]);
+        invertible_matrix[i] = std::move(linear_vector_sum(invertible_matrix[Is], lambda, invertible_matrix[i], 1.0));
+        identity_matrix[i] = std::move(linear_vector_sum(identity_matrix[Is], lambda, identity_matrix[i], 1.0));
+    }
+    if constexpr (Is + 1 != sizeof...(Tp))
+        forward<Is + 1>(invertible_matrix, identity_matrix);
+}
 
 
+template<size_t Is = 0, typename... Tp, size_t N = sizeof...(Tp)-1>
+void back (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
+    for (int i = N-Is; i > 0; --i) {
+        double lambda = -std::get<N-Is>(invertible_matrix[i-1]) / std::get<N-Is>(invertible_matrix[N-Is]);
+        invertible_matrix[i-1] = std::move(linear_vector_sum(invertible_matrix[N-Is], lambda, invertible_matrix[i-1], 1.0));
+        identity_matrix[i-1] = std::move(linear_vector_sum(identity_matrix[N-Is], lambda, identity_matrix[i-1], 1.0));
+    }
+    if constexpr (N-Is > 0)
+        back<Is + 1>(invertible_matrix, identity_matrix);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void final_step (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
+    vector_scalar_multiplication(identity_matrix[Is], 1.0 / std::get<Is>(invertible_matrix[Is]), identity_matrix[Is]);
+    if constexpr (Is + 1 != sizeof...(Tp))
+        final_step<Is + 1>(invertible_matrix, identity_matrix);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void identity_matrix (std::vector<std::tuple<Tp...>> & E) {
+    for (int i = 0; i < E.size(); ++i)
+        std::get<Is>(E[i]) = (i == Is) ? 1 : 0;
+    if constexpr (Is + 1 != sizeof...(Tp))
+        identity_matrix<Is + 1>(E);
+}
+
+
+template<typename... Tp>
+auto Gaussian_elimination (const std::vector<std::tuple<Tp...>> & invertible_matrix) {
+    std::vector<std::tuple<Tp...>> E (invertible_matrix.size());
+    identity_matrix(E);
+    forward(invertible_matrix, E);
+    back(invertible_matrix, E);
+    final_step(invertible_matrix, E);
+    return E;
+}
+
+
+template <typename F, size_t... Is>
+auto gen_tuple_impl(F & func, std::index_sequence<Is...> ) {
+    return std::make_tuple(func(Is)...);
+}
+
+template <size_t N, typename F>
+auto gen_tuple (const F & func) {
+    return gen_tuple_impl(func, std::make_index_sequence<N>{} );
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void matrix_multiplication (const std::vector<std::tuple<Tp...>> & A, const std::vector<std::tuple<Tp...>> & B, std::vector<std::tuple<Tp...>> & R) {
+    std::tuple<Tp...> column;
+    std::vector<double> buf_column;
+    buf_column.reserve(B.size());
+    for (const auto & vector : B)
+        buf_column.emplace_back(std::get<Is>(vector));
+    column = std::move(gen_tuple<dim>([&](size_t j) { return buf_column[j]; }));
+    for (int i = 0; i < B.size(); ++i)
+        std::get<Is>(R[i]) = std::move(scalar_vector_multiplication(A[i], column));
+    if constexpr (Is + 1 != sizeof...(Tp))
+        matrix_multiplication<Is + 1>(A, B, R);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void matrix_transposition (const std::vector<std::tuple<Tp...>> & A, std::vector<std::tuple<Tp...>> & R) {
+    std::vector<double> buf_column;
+    buf_column.reserve(A.size());
+    for (const auto & vector : A)
+        buf_column.emplace_back(std::get<Is>(vector));
+    R[Is] = std::move(gen_tuple<dim>([&](size_t j) { return buf_column[j]; }));
+    if constexpr (Is + 1 != sizeof...(Tp)) // !
+        matrix_transposition<Is + 1>(A,  R);
+}
+
+
+template<size_t Is = 0, typename... Tp>
+void get_column (const std::vector<std::tuple<Tp...>> & A, const int & column_number, std::tuple<Tp...> & column) {
+    if (Is == column_number) {
+        std::vector<double> buf_column;
+        buf_column.reserve(A.size());
+        for (const auto & vector: A)
+            buf_column.emplace_back(std::get<Is>(vector));
+        column = std::move(gen_tuple<dim>([&](size_t j) { return buf_column[j]; }));
+    }
+    if constexpr (Is + 1 != sizeof...(Tp))
+        get_column<Is + 1>(A,  column_number, column);
+}
+
+
+void direction (double & cos_a, double & cos_b, double & cos_g, double & sin_a, double & sin_b, double & sin_g,
+                point & direction_vector, const std::vector<point> & basis_set) {
+
+    point xOy_projection = std::make_tuple(std::get<0>(direction_vector), std::get<1>(direction_vector), 0);
+
+    cos_a = cos_angle_between_vectors(xOy_projection, basis_set[0]);
+    sin_a = sin_angle_between_vectors(xOy_projection, basis_set[0]);
+
+    cos_b = cos_angle_between_vectors(xOy_projection, basis_set[1]);
+    sin_b = sin_angle_between_vectors(xOy_projection, basis_set[1]);
+
+    cos_g = cos_angle_between_vectors(direction_vector, basis_set[2]);
+    sin_g = sin_angle_between_vectors(direction_vector, basis_set[2]);
+}
 
 
 std::vector<point> frame_of_reference_rotation (point & direction_vector, const std::vector<point> & basis_set) {
-    std::vector<point> new_basis_set;
+    std::vector<point> new_basis_set (basis_set.size());
 
-//    double cos_a, cos_b, cos_g, sin_a, sin_b, sin_g;
-//    cos_a = cos_angle_between_vectors(direction_vector, basis_set[0]);
-//    cos_b = cos_angle_between_vectors(direction_vector, basis_set[1]);
-//    cos_g = cos_angle_between_vectors(direction_vector, basis_set[2]);
-//    sin_a = sin_angle_between_vectors(direction_vector, basis_set[0]);
-//    sin_b = sin_angle_between_vectors(direction_vector, basis_set[1]);
-//    sin_g = sin_angle_between_vectors(direction_vector, basis_set[2]);
+    double cos_a, cos_b, cos_g, sin_a, sin_b, sin_g;
+
+    direction (cos_a, cos_b, cos_g, sin_a, sin_b, sin_g, direction_vector, basis_set);
 
     std::vector<point> M; // Rotation matrix
     M.emplace_back(cos_b*cos_g,                     -sin_a*cos_b,                      sin_b);
     M.emplace_back(sin_a*sin_b*cos_g + sin_g*cos_a, -sin_a*sin_b*sin_g + cos_a*cos_g, -sin_a*cos_b);
     M.emplace_back(sin_a*sin_g - sin_b*cos_a*cos_g,  sin_a*cos_g + sin_b*sin_g*cos_a,  cos_a*cos_b);
 
-    new_basis_set.reserve(basis_set.size());
-    for (const auto & vector : basis_set)
-        new_basis_set.emplace_back(scalar_vector_multiplication(M[0], vector),
-                                   scalar_vector_multiplication(M[1], vector),
-                                   scalar_vector_multiplication(M[2], vector)); // Чёт говной воняет.
+    auto Revers_rotation_matrix = std::move(Gaussian_elimination(M));
+    matrix_multiplication(Revers_rotation_matrix, basis_set, new_basis_set);
 
     return new_basis_set;
+}
+
+
+point old_vector_in_new_basis_set (point & vector, std::vector<point> & basis_set) {
+    point result;
+    std::vector<point> completed (basis_set.size());
+    completed[0] = vector; // May be matrix_insert_template?
+    matrix_transposition(completed, completed);
+    matrix_multiplication(basis_set, completed, completed);
+    get_column(completed, 0, result);
+    return result;
 }
 
 
@@ -198,7 +327,7 @@ bool is_cation (point & O_1, point & O_2, frame & free_protons, const double & d
     const std::vector<point> default_basis_set = {std::make_tuple(1, 0, 0),
                                                   std::make_tuple(0, 1, 0),
                                                   std::make_tuple(0, 0, 1)};
-
+    // You lost offset
     std::vector<point> new_basis_set = std::move(frame_of_reference_rotation(O_2_in_O1_ref, default_basis_set));
 
     for (int i = 0; i < free_protons.size(); ++i) {
@@ -234,97 +363,6 @@ point direction_of_rotation (point & vector, std::vector<point> & basis_set) {
     cos_g = cos_angle_between_vectors(vector, basis_set[2]);
     sin_g = sin_angle_between_vectors(vector, basis_set[2]);
     return result;
-}
-
-
-template <class Tuple>
-auto linear_vector_sum  (const Tuple & a, const double & lambda_1, const Tuple & b, const double & lambda_2) {
-    auto buf_a = a;
-    auto buf_b = b;
-    vector_scalar_multiplication(a, lambda_1, buf_a);
-    vector_scalar_multiplication(b, lambda_2, buf_b);
-    vector_offset(buf_b, buf_a, buf_b);
-    return buf_b;
-}
-
-
-template<size_t Is = 0, typename... Tp>
-void forward (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
-    for (int i = Is+1; i < invertible_matrix.size(); ++i) {
-        double lambda = -std::get<Is>(invertible_matrix[i]) / std::get<Is>(invertible_matrix[Is]);
-        invertible_matrix[i] = linear_vector_sum(invertible_matrix[Is], lambda, invertible_matrix[i], 1.0);
-        identity_matrix[i] = linear_vector_sum(identity_matrix[Is], lambda, identity_matrix[i], 1.0);
-    }
-    if constexpr (Is + 1 != sizeof...(Tp))
-        forward<Is + 1>(invertible_matrix, identity_matrix);
-}
-
-
-template<size_t Is = 0, typename... Tp, size_t N = sizeof...(Tp)-1>
-void back (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
-    for (int i = N-Is; i > 0; --i) {
-        double lambda = -std::get<N-Is>(invertible_matrix[i-1]) / std::get<N-Is>(invertible_matrix[N-Is]);
-        invertible_matrix[i-1] = linear_vector_sum(invertible_matrix[N-Is], lambda, invertible_matrix[i-1], 1.0);
-        identity_matrix[i-1] = linear_vector_sum(identity_matrix[N-Is], lambda, identity_matrix[i-1], 1.0);
-    }
-    if constexpr (N-Is > 0)
-        back<Is + 1>(invertible_matrix, identity_matrix);
-}
-
-
-template<size_t Is = 0, typename... Tp>
-void final_step (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
-    vector_scalar_multiplication(identity_matrix[Is], 1.0 / std::get<Is>(invertible_matrix[Is]), identity_matrix[Is]);
-    if constexpr (Is + 1 != sizeof...(Tp))
-        final_step<Is + 1>(invertible_matrix, identity_matrix);
-}
-
-
-template<size_t Is = 0, typename... Tp>
-void identity_matrix (std::vector<std::tuple<Tp...>> & E) {
-    for (int i = 0; i < E.size(); ++i)
-        std::get<Is>(E[i]) = (i == Is) ? 1 : 0;
-    if constexpr (Is + 1 != sizeof...(Tp))
-        identity_matrix<Is + 1>(E);
-}
-
-
-template<size_t Is = 0, typename... Tp>
-auto Gaussian_elimination (std::vector<std::tuple<Tp...>> invertible_matrix) {
-    auto E = invertible_matrix;
-    identity_matrix(E);
-    forward(invertible_matrix, E);
-    back(invertible_matrix, E);
-    final_step(invertible_matrix, E);
-    return E;
-}
-
-
-template <typename F, size_t... Is>
-auto gen_tuple_impl(F & func, std::index_sequence<Is...> ) {
-    return std::make_tuple(func(Is)...);
-}
-
-template <size_t N, typename F>
-auto gen_tuple (const F & func) {
-    return gen_tuple_impl(func, std::make_index_sequence<N>{} );
-}
-
-
-
-
-template<size_t Is = 0, typename... Tp>
-void matrix_multiplication (std::vector<std::tuple<Tp...>> & A, std::vector<std::tuple<Tp...>> & B, std::vector<std::tuple<Tp...>> & R) {
-    std::tuple<Tp...> column;
-    std::vector<double> buf_column;
-    buf_column.reserve(B.size());
-    for (const auto & vector : B)
-        buf_column.emplace_back(std::get<Is>(vector));
-    column = std::move(gen_tuple<dim>([&](size_t j) { return buf_column[j]; }));
-    for (int i = 0; i < B.size(); ++i)
-        std::get<Is>(R[i]) = scalar_vector_multiplication(A[i], column);
-    if constexpr (Is + 1 != sizeof...(Tp))
-        matrix_multiplication<Is + 1>(A, B, R);
 }
 
 
