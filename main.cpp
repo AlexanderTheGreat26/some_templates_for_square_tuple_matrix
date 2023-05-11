@@ -163,23 +163,39 @@ double sin_angle_between_vectors  (const point & a, const point & b) {
 }
 
 
-template <class Tuple>
-auto linear_vector_sum  (const Tuple & a, const double & lambda_1, const Tuple & b, const double & lambda_2) {
-    auto buf_a = a;
-    auto buf_b = b;
-    vector_scalar_multiplication(a, lambda_1, buf_a);
-    vector_scalar_multiplication(b, lambda_2, buf_b);
-    vector_offset(buf_b, buf_a, buf_b);
-    return buf_b;
+template<typename... Tp>
+void row_addition (std::vector<std::tuple<Tp...>> & matrix, double & lambda, const size_t & i, const size_t & j) {
+    std::tuple<Tp...> R_i;
+    vector_scalar_multiplication(matrix[i], lambda, R_i);
+    vector_offset(matrix[j], R_i, matrix[j]);
+}
+
+
+template<typename... Tp>
+void row_switching (std::vector<std::tuple<Tp...>> & matrix, const size_t & i, const size_t & j) {
+    std::swap(matrix[i], matrix[j]);
+    if (j%2 == 0)
+        vector_scalar_multiplication(matrix[1], std::pow(-1, j + 1), matrix[1]);
+}
+
+
+bool is_equal(const double & x, const double & y) {
+    return std::fabs(x - y) < std::numeric_limits<double>::epsilon();
 }
 
 
 template<size_t Is = 0, typename... Tp>
 void forward (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
     for (int i = Is+1; i < invertible_matrix.size(); ++i) {
+        int k = 0;
+        while (is_equal(std::get<Is>(invertible_matrix[Is]), 0) && k < invertible_matrix.size()) {
+            row_switching(invertible_matrix,Is, k);
+            row_switching(identity_matrix, Is, k);
+            ++k;
+        }
         double lambda = -std::get<Is>(invertible_matrix[i]) / std::get<Is>(invertible_matrix[Is]);
-        invertible_matrix[i] = std::move(linear_vector_sum(invertible_matrix[Is], lambda, invertible_matrix[i], 1.0));
-        identity_matrix[i] = std::move(linear_vector_sum(identity_matrix[Is], lambda, identity_matrix[i], 1.0));
+        row_addition(invertible_matrix, lambda, Is, i);
+        row_addition(identity_matrix, lambda, Is, i);
     }
     if constexpr (Is + 1 != sizeof...(Tp))
         forward<Is + 1>(invertible_matrix, identity_matrix);
@@ -189,9 +205,15 @@ void forward (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<st
 template<size_t Is = 0, typename... Tp, size_t N = sizeof...(Tp)-1>
 void back (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
     for (int i = N-Is; i > 0; --i) {
+        int k = 0;
+        while (is_equal(std::get<N-Is>(invertible_matrix[N-Is]), 0) && k < invertible_matrix.size()) {
+            row_switching(invertible_matrix, N-Is, k);
+            row_switching(identity_matrix, N-Is, k);
+            ++k;
+        }
         double lambda = -std::get<N-Is>(invertible_matrix[i-1]) / std::get<N-Is>(invertible_matrix[N-Is]);
-        invertible_matrix[i-1] = std::move(linear_vector_sum(invertible_matrix[N-Is], lambda, invertible_matrix[i-1], 1.0));
-        identity_matrix[i-1] = std::move(linear_vector_sum(identity_matrix[N-Is], lambda, identity_matrix[i-1], 1.0));
+        row_addition(invertible_matrix, lambda, N-Is, i-1);
+        row_addition(identity_matrix, lambda, N-Is, i-1);
     }
     if constexpr (N-Is > 0)
         back<Is + 1>(invertible_matrix, identity_matrix);
