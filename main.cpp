@@ -368,33 +368,25 @@ std::vector<point> oxygen_neighbour_list (int & oxygen_index, frame & oxygens, c
 }
 
 
-std::vector<std::pair<point, point>> potential_Zundel (std::vector<point> & list_of_oxygens,
-                                                       frame & protons) {
-    std::vector<std::pair<point, point>> result;
-    for (int i = 0; i < list_of_oxygens.size()-1; ++i) {
-        for (auto & proton : protons) {
-            if (cation_sufficient_condition(list_of_oxygens[i], list_of_oxygens[i+1], proton))// &&
-                // !covalent(list_of_oxygens[i], proton) && !covalent(list_of_oxygens[i+1], proton))
-                result.emplace_back(list_of_oxygens[i], list_of_oxygens[i+1]);
-        } // All in all we must have only one pair,
-    }
+template<size_t Is = 0, typename... Tp>
+void diag_multiplication (std::vector<std::tuple<Tp...>> & M, double & result) {
+    result *= std::get<Is>(M[Is]);
+    if constexpr (Is + 1 != sizeof...(Tp))
+        diag_multiplication<Is + 1>(M, result);
+}
+
+
+template<typename... Tp>
+double det (std::vector<std::tuple<Tp...>>  M) {
+    double result = 1;
+    std::vector<std::tuple<Tp...>> foo (M.size());
+    forward(M, foo);
+    diag_multiplication(M, result);
     return result;
 }
 
 
-cation_frames pairs_of_interest (frames & oxygens, frames & free_protons, const double & max_cation_length) {
 
-    for (int i = 0; i < oxygens.size(); ++i) {
-
-        for (int j = 0; i < oxygens[i].size(); ++j) {
-
-
-
-        }
-
-    }
-
-}
 
 
 //cation_frame is_cation (frame & oxygens, frame & free_protons, const double & deviation,
