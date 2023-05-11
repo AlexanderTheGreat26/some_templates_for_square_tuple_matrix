@@ -17,6 +17,11 @@ const double max_cation_length ();
 
 
 typedef std::tuple<double, double, double> point;
+
+typedef std::vector<point> matrix;
+typedef std::vector<matrix> cation_frame;
+typedef std::vector<cation_frame> cation_frames;
+
 typedef std::vector<point> frame;
 typedef std::vector<frame> frames;
 
@@ -211,7 +216,7 @@ void identity_matrix (std::vector<std::tuple<Tp...>> & E) {
 
 
 template<typename... Tp>
-auto Gaussian_elimination (const std::vector<std::tuple<Tp...>> & invertible_matrix) {
+auto Gaussian_elimination (std::vector<std::tuple<Tp...>> invertible_matrix) { // !&?
     std::vector<std::tuple<Tp...>> E (invertible_matrix.size());
     identity_matrix(E);
     forward(invertible_matrix, E);
@@ -319,31 +324,133 @@ point old_vector_in_new_basis_set (point & vector, std::vector<point> & basis_se
 }
 
 
-bool is_cation (point & O_1, point & O_2, frame & free_protons, const double & deviation) {
-    bool ans = false;
-    point ref, O_2_in_O1_ref;
-    vector_scalar_multiplication(O_1, -1.0, ref);
-    vector_offset(O_2, ref, O_2_in_O1_ref);
-    const std::vector<point> default_basis_set = {std::make_tuple(1, 0, 0),
-                                                  std::make_tuple(0, 1, 0),
-                                                  std::make_tuple(0, 0, 1)};
-    // You lost offset
-    std::vector<point> new_basis_set = std::move(frame_of_reference_rotation(O_2_in_O1_ref, default_basis_set));
+template<typename T, size_t... Is>
+bool outside_the_box_impl (T const& t, std::index_sequence<Is...>, const double & left_border, const double & right_border) {
+    return ((std::get<Is>(t) > right_border || std::get<Is>(t) < left_border) | ...);
+}
 
-    for (int i = 0; i < free_protons.size(); ++i) {
-        vector_offset(, ref, O_2_in_O1_ref);
-    }
-
-    return ans;
+template <class Tuple>
+bool outside_the_box (const Tuple& t, const double & left_border, const double & right_border) {
+    constexpr auto size = std::tuple_size<Tuple>{};
+    return outside_the_box_impl(t, std::make_index_sequence<size>{}, left_border, right_border);
 }
 
 
-bool pair_of_interest (point & O_1, point & O_2, frame & free_proton, const double & deviation, const std::string & type) {
-    if (type == "Zundel") {
-        point geometric_center = geometric_center_between_O(O_1,O_2);
+void outsiders_excluding (frame & atoms, const double & left_border, const double & right_border) {
+    for (int j = 0; j < atoms.size(); ++j)
+        if (outside_the_box(atoms[j], left_border, right_border))
+            atoms.erase(atoms.begin()+j-1);
+}
+
+
+void data_clearing (frames & oxygens, frames & free_protons, const double & left_border, const double & right_border) {
+    for (long i = 0; i < oxygens.size(); ++i) {
+        outsiders_excluding(oxygens[i], left_border, right_border);
+        outsiders_excluding(free_protons[i], left_border, right_border);
+    }
+}
+
+
+bool cation_sufficient_condition (point & O1, point & O2, point & H) {
+    double dist = distance(O1, O2);
+    double dist21st = distance(H, O1);
+    double dist22nd = distance(H, O2);
+    return ((dist > dist21st && dist > dist22nd));
+}
+
+
+std::vector<point> oxygen_neighbour_list (int & oxygen_index, frame & oxygens, const double & length) {
+    std::vector<point> list;
+    for (int i = 0; i < oxygens.size() ; ++i)
+        if (distance(oxygens[i], oxygens[oxygen_index]) <= length)
+            list.emplace_back(oxygens[i]);
+    return list;
+}
+
+
+std::vector<std::pair<point, point>> potential_Zundel (std::vector<point> & list_of_oxygens,
+                                                       frame & protons) {
+    std::vector<std::pair<point, point>> result;
+    for (int i = 0; i < list_of_oxygens.size()-1; ++i) {
+        for (auto & proton : protons) {
+            if (cation_sufficient_condition(list_of_oxygens[i], list_of_oxygens[i+1], proton))// &&
+                // !covalent(list_of_oxygens[i], proton) && !covalent(list_of_oxygens[i+1], proton))
+                result.emplace_back(list_of_oxygens[i], list_of_oxygens[i+1]);
+        } // All in all we must have only one pair,
+    }
+    return result;
+}
+
+
+cation_frames pairs_of_interest (frames & oxygens, frames & free_protons, const double & max_cation_length) {
+
+    for (int i = 0; i < oxygens.size(); ++i) {
+
+        for (int j = 0; i < oxygens[i].size(); ++j) {
+
+
+
+        }
+
     }
 
 }
+
+
+//cation_frame is_cation (frame & oxygens, frame & free_protons, const double & deviation,
+//                        const double & left_border, const double & right_border) {
+//
+//
+//
+//
+//    std::vector<int> oxygens_excludes, protons_excludes;
+//
+//    for (int i = 0; i < oxygens.size(); ++i)
+//        if (outside_the_box(oxygens[i], left_border, right_border))
+//            oxygens_excludes.emplace_back(i);
+//
+//
+//    for (int i = 0; i < oxygens.size(); ++i) {
+//
+//    }
+//
+//
+//
+//
+//    // Если катион, то необходимо удалить из фреймов соответсвующие частицы. Тогда они должны пода
+//    // Можно удалять сразу окружение по критерию.
+//
+//
+//    for (int i = 0; i < oxygens.size(); ++i) { // add ! any_of excludes
+//
+//        if (std::any_of(oxygens_excludes.begin(), oxygens_excludes.end(), [&](int k) { return k == i; }))
+//            continue;
+//
+//        point ref, O_2_in_O1_ref; // здесь критерий нужен
+//        vector_scalar_multiplication(O_1, -1.0, ref); // !
+//        vector_offset(O_2, ref, O_2_in_O1_ref);
+//
+//        const std::vector<point> default_basis_set = {std::make_tuple(1, 0, 0),
+//                                                      std::make_tuple(0, 1, 0),
+//                                                      std::make_tuple(0, 0, 1)};
+//        // You lost offset
+//        std::vector<point> new_basis_set = std::move(frame_of_reference_rotation(O_2_in_O1_ref, default_basis_set));
+//
+//
+//        for (int i = 0; i < free_protons.size(); ++i) {
+//            vector_offset(, ref, O_2_in_O1_ref);
+//        }
+//    }
+//    return ans;
+//}
+//
+//
+//bool pair_of_interest (point & O_1, point & O_2, frame & free_proton, const double & deviation, const std::string & type) {
+//    if (type == "Zundel") {
+//        point geometric_center = geometric_center_between_O(O_1,O_2);
+//    }
+//
+//}
 
 
 point direction_of_rotation (point & vector, std::vector<point> & basis_set) {
