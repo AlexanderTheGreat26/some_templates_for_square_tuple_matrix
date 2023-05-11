@@ -175,7 +175,7 @@ template<typename... Tp>
 void row_switching (std::vector<std::tuple<Tp...>> & matrix, const size_t & i, const size_t & j) {
     std::swap(matrix[i], matrix[j]);
     if (j%2 == 0)
-        vector_scalar_multiplication(matrix[1], std::pow(-1, j + 1), matrix[1]);
+        vector_scalar_multiplication(matrix[1], -1, matrix[1]);
 }
 
 
