@@ -223,7 +223,10 @@ void back (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::
 template<size_t Is = 0, typename... Tp>
 void final_step (std::vector<std::tuple<Tp...>> & invertible_matrix, std::vector<std::tuple<Tp...>> & identity_matrix) {
     vector_scalar_multiplication(identity_matrix[Is], 1.0 / std::get<Is>(invertible_matrix[Is]), identity_matrix[Is]);
-    if constexpr (Is + 1 != sizeof...(Tp))
+    for (int i = 0; i < identity_matrix.size(); ++i)
+        if(is_equal(std::get<Is>(identity_matrix[i]), -0))
+            std::get<Is>(identity_matrix[i]) = 0; // Just for output.
+    if constexpr (Is + 1 != sizeof...(Tp)) // !
         final_step<Is + 1>(invertible_matrix, identity_matrix);
 }
 
