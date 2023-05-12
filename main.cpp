@@ -351,7 +351,7 @@ point old_vector_in_new_basis_set (point & vector, std::vector<point> & basis_se
 
 template<typename T, size_t... Is>
 bool outside_the_box_impl (T const& t, std::index_sequence<Is...>, const double & left_border, const double & right_border) {
-    return ((std::get<Is>(t) > right_border || std::get<Is>(t) < left_border) | ...);
+    return ((std::get<Is>(t) > right_border || std::get<Is>(t) < left_border) || ...);
 }
 
 template <class Tuple>
